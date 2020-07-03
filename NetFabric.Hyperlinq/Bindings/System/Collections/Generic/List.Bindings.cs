@@ -1,6 +1,8 @@
 using System;
+using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
@@ -155,10 +157,28 @@ namespace NetFabric.Hyperlinq
         public static TSource[] ToArray<TSource>(this List<TSource> source)
         {
             var array = new TSource[source.Count];
-            Array.Copy(source.GetItems(), array, source.Count);
+            ArrayExtensions.Copy(source.GetItems(), array, source.Count);
             return array;
         }
-        
+
+        public static ArraySegment<TSource> ToArray<TSource>(this List<TSource> source, ArrayPool<TSource> pool)
+        {
+            var result = new ArraySegment<TSource>(pool.Rent(source.Count), 0, source.Count);
+            ArrayExtensions.Copy(source.GetItems(), result.Array, source.Count);
+            return result;
+        }
+
+#if SPAN_SUPPORTED
+
+        public static IMemoryOwner<TSource> ToArray<TSource>(this List<TSource> source, MemoryPool<TSource> pool)
+        {
+            var result = pool.RentSliced(source.Count);
+            ArrayExtensions.Copy(source.GetItems(), result.Memory.Span);
+            return result;
+        }
+
+#endif
+
         public static List<TSource> ToList<TSource>(this List<TSource> source)
             => new List<TSource>(source);
 

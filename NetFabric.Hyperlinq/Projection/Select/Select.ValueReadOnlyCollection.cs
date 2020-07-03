@@ -49,16 +49,16 @@ namespace NetFabric.Hyperlinq
             bool ICollection<TResult>.IsReadOnly  
                 => true;
 
-            public void CopyTo(TResult[] array, int arrayIndex) 
+            public void CopyTo(TResult[] array, int arrayIndex = 0) 
             {
-                if (source.Count == 0)
-                    return;
-
-                checked
+                if (source.Count != 0)
                 {
-                    using var enumerator = source.GetEnumerator();
-                    for (var index = arrayIndex; enumerator.MoveNext(); index++)
-                        array[index] = selector(enumerator.Current)!;
+                    checked
+                    {
+                        using var enumerator = source.GetEnumerator();
+                        for (var index = arrayIndex; enumerator.MoveNext(); index++)
+                            array[index] = selector(enumerator.Current)!;
+                    }
                 }
             }
 

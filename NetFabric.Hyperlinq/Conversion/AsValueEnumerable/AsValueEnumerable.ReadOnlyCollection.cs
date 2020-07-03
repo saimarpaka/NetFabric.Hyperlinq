@@ -47,25 +47,9 @@ namespace NetFabric.Hyperlinq
             bool ICollection<TSource>.IsReadOnly  
                 => true;
 
-            public void CopyTo(TSource[] array, int arrayIndex) 
-            {
-                if (source.Count == 0)
-                    return;
-
-                if (source is ICollection<TSource> collection)
-                {
-                    collection.CopyTo(array, arrayIndex);
-                }
-                else
-                {
-                    checked
-                    {
-                        using var enumerator = source.GetEnumerator();
-                        for (var index = arrayIndex; enumerator.MoveNext(); index++)
-                            array[index] = enumerator.Current;
-                    }
-                }
-            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void CopyTo(TSource[] array, int arrayIndex = 0)
+                => ReadOnlyCollectionExtensions.Copy(source, array, arrayIndex);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             bool ICollection<TSource>.Contains(TSource item)
@@ -115,25 +99,9 @@ namespace NetFabric.Hyperlinq
             bool ICollection<TSource>.IsReadOnly  
                 => true;
 
-            public void CopyTo(TSource[] array, int arrayIndex) 
-            {
-                if (source.Count == 0)
-                    return;
-
-                if (source is ICollection<TSource> collection)
-                {
-                    collection.CopyTo(array, arrayIndex);
-                }
-                else
-                {
-                    checked
-                    {
-                        using var enumerator = source.GetEnumerator();
-                        for (var index = arrayIndex; enumerator.MoveNext(); index++)
-                            array[index] = enumerator.Current;
-                    }
-                }
-            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void CopyTo(TSource[] array, int arrayIndex = 0)
+                => ReadOnlyCollectionExtensions.Copy(source, array, arrayIndex);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             bool ICollection<TSource>.Contains(TSource item)

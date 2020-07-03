@@ -63,36 +63,7 @@ namespace NetFabric.Hyperlinq
                 => true;
 
             public void CopyTo(TResult[] array, int arrayIndex)
-            {
-                var sourceArray = source.Array;
-                var offset = source.Offset;
-                if (offset == 0)
-                {
-                    if (arrayIndex == 0)
-                    {
-                        for (var index = 0; index < Count; index++)
-                            array[index] = selector(sourceArray[index]);
-                    }
-                    else
-                    {
-                        for (var index = 0; index < Count; index++)
-                            array[index + arrayIndex] = selector(sourceArray[index]);
-                    }
-                }
-                else
-                {
-                    if (arrayIndex == 0)
-                    {
-                        for (var index = 0; index < Count; index++)
-                            array[index] = selector(sourceArray[index + offset]);
-                    }
-                    else
-                    {
-                        for (var index = 0; index < Count; index++)
-                            array[index + arrayIndex] = selector(sourceArray[index + offset]);
-                    }
-                }
-            }
+                => ArrayExtensions.Copy(source, array, arrayIndex, selector);
 
             bool ICollection<TResult>.Contains(TResult item)
                 => ArrayExtensions.Contains<TSource, TResult>(source, item, selector);

@@ -1,7 +1,6 @@
-using NetFabric.Hyperlinq;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace NetFabric.Hyperlinq
@@ -14,40 +13,55 @@ namespace NetFabric.Hyperlinq
             where TList : IReadOnlyList<TSource>
             => ToArray<TList, TSource>(source, 0, source.Count);
 
-        
         static TSource[] ToArray<TList, TSource>(this TList source, int skipCount, int takeCount)
             where TList : IReadOnlyList<TSource>
         {
             var array = new TSource[takeCount];
-            if (takeCount != 0)
-            {
-                if (takeCount == source.Count && source is ICollection<TSource> collection)
-                {
-                    collection.CopyTo(array, skipCount);
-                }
-                else
-                {
-                    if (skipCount == 0)
-                    {
-                        for (var index = 0; index < takeCount; index++)
-                            array[index] = source[index];
-                    }
-                    else
-                    {
-                        for (var index = 0; index < takeCount; index++)
-                            array[index] = source[index + skipCount];
-                    }
-                }
-            }
+            ReadOnlyListExtensions.Copy(source, skipCount, array, 0, takeCount);
             return array;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ArraySegment<TSource> ToArray<TList, TSource>(this TList source, ArrayPool<TSource> pool)
+            where TList : IReadOnlyList<TSource>
+            => ToArray(source, 0, source.Count, pool);
+
+        static ArraySegment<TSource> ToArray<TList, TSource>(this TList source, int skipCount, int takeCount, ArrayPool<TSource> pool)
+            where TList : IReadOnlyList<TSource>
+        {
+            var result = new ArraySegment<TSource>(pool.Rent(takeCount), 0, takeCount);
+            ReadOnlyListExtensions.Copy(source, skipCount, result.Array, 0, takeCount);
+            return result;
+        }
+
+#if SPAN_SUPPORTED
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static IMemoryOwner<TSource> ToArray<TList, TSource>(this TList source, MemoryPool<TSource> pool)
+            where TList : IReadOnlyList<TSource>
+            => ToArray(source, 0, source.Count, pool);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static IMemoryOwner<TSource> ToArray<TList, TSource>(this TList source, int skipCount, int takeCount, MemoryPool<TSource> pool)
+            where TList : IReadOnlyList<TSource>
+        {
+            var result = pool.RentSliced(takeCount);
+            ReadOnlyListExtensions.Copy<TList, TSource>(source, skipCount, result.Memory.Span, takeCount);
+            return result;
+        }
+
+#endif
 
         static TSource[] ToArray<TList, TSource>(this TList source, Predicate<TSource> predicate, int skipCount, int takeCount)
             where TList : IReadOnlyList<TSource>
         {
-            var builder = new LargeArrayBuilder<TSource>(initialize: true);
-            builder.AddRange<TList>(source, predicate, skipCount, takeCount);
+            using var builder = new LargeArrayBuilder<TSource>(initialize: true);
+            var end = skipCount + takeCount;
+            for (var index = skipCount; index < end; index++)
+            {
+                if (predicate(source[index]))
+                    builder.Add(source[index]);
+            }
             return builder.ToArray();
         }
 
@@ -55,8 +69,23 @@ namespace NetFabric.Hyperlinq
         static TSource[] ToArray<TList, TSource>(this TList source, PredicateAt<TSource> predicate, int skipCount, int takeCount)
             where TList : IReadOnlyList<TSource>
         {
-            var builder = new LargeArrayBuilder<TSource>(initialize: true);
-            builder.AddRange<TList>(source, predicate, skipCount, takeCount);
+            using var builder = new LargeArrayBuilder<TSource>(initialize: true);
+            if (skipCount == 0)
+            {
+                for (var index = 0; index < takeCount; index++)
+                {
+                    if (predicate(source[index], index))
+                        builder.Add(source[index]);
+                }
+            }
+            else
+            {
+                for (var index = 0; index < takeCount; index++)
+                {
+                    if (predicate(source[index + skipCount], index))
+                        builder.Add(source[index + skipCount]);
+                }
+            }
             return builder.ToArray();
         }
 
@@ -65,16 +94,7 @@ namespace NetFabric.Hyperlinq
             where TList : IReadOnlyList<TSource>
         {
             var array = new TResult[takeCount];
-            if (skipCount == 0)
-            {
-                for (var index = 0; index < takeCount; index++)
-                    array[index] = selector(source[index])!;
-            } 
-            else
-            {
-                for (var index = 0; index < takeCount; index++)
-                    array[index] = selector(source[index + skipCount])!;
-            }
+            ReadOnlyListExtensions.Copy(source, skipCount, array, 0, takeCount, selector);
             return array;
         }
 
@@ -83,16 +103,7 @@ namespace NetFabric.Hyperlinq
             where TList : IReadOnlyList<TSource>
         {
             var array = new TResult[takeCount];
-            if (skipCount == 0)
-            {
-                for (var index = 0; index < takeCount; index++)
-                    array[index] = selector(source[index], index)!;
-            } 
-            else
-            {
-                for (var index = 0; index < takeCount; index++)
-                    array[index] = selector(source[index + skipCount], index)!;
-            }
+            ReadOnlyListExtensions.Copy(source, skipCount, array, 0, takeCount, selector);
             return array;
         }
 
@@ -100,107 +111,14 @@ namespace NetFabric.Hyperlinq
         static TResult[] ToArray<TList, TSource, TResult>(this TList source, Predicate<TSource> predicate, NullableSelector<TSource, TResult> selector, int skipCount, int takeCount)
             where TList : IReadOnlyList<TSource>
         {
-            var builder = new LargeArrayBuilder<TResult>(initialize: true);
-            builder.AddRange<TList, TSource>(source, predicate, selector, skipCount, takeCount);
+            using var builder = new LargeArrayBuilder<TResult>(initialize: true);
+            var end = skipCount + takeCount;
+            for (var index = skipCount; index < end; index++)
+            {
+                if (predicate(source[index]))
+                    builder.Add(selector(source[index]));
+            }
             return builder.ToArray();
-        }
-    }
-}
-
-namespace System.Collections.Generic
-{
-    partial struct LargeArrayBuilder<T>
-    {
-        public void AddRange<TList>(TList items, Predicate<T> predicate, int skipCount, int takeCount)
-            where TList : IReadOnlyList<T>
-        {
-            Debug.Assert(items is object);
-
-            var destination = _current;
-            var index = _index;
-
-            // Continuously read in items from the enumerator, updating _count
-            // and _index when we run out of space.
-
-            var end = skipCount + takeCount;
-            for (var itemIndex = skipCount; itemIndex < end; itemIndex++)
-            {
-                var item = items[itemIndex];
-                if (predicate(item))
-                {
-                    if ((uint)index >= (uint)destination.Length)
-                        AddWithBufferAllocation(item, ref destination, ref index);
-                    else
-                        destination[index] = item;
-
-                    index++;
-                }
-            }
-            
-            // Final update to _count and _index.
-            _count += index - _index;
-            _index = index;
-        }
-
-        public void AddRange<TList>(TList items, PredicateAt<T> predicate, int skipCount, int takeCount)
-            where TList : IReadOnlyList<T>
-        {
-            Debug.Assert(items is object);
-
-            var destination = _current;
-            var index = _index;
-
-            // Continuously read in items from the enumerator, updating _count
-            // and _index when we run out of space.
-
-            for (var itemIndex = 0; itemIndex < takeCount; itemIndex++)
-            {
-                var item = items[itemIndex + skipCount];
-                if (predicate(item, itemIndex))
-                {
-                    if ((uint)index >= (uint)destination.Length)
-                        AddWithBufferAllocation(item, ref destination, ref index);
-                    else
-                        destination[index] = item;
-
-                    index++;
-                }
-            }
-            
-            // Final update to _count and _index.
-            _count += index - _index;
-            _index = index;
-        }
-
-        public void AddRange<TList, U>(TList items, Predicate<U> predicate, NullableSelector<U, T> selector, int skipCount, int takeCount)
-            where TList : IReadOnlyList<U>
-        {
-            Debug.Assert(items is object);
-
-            var destination = _current;
-            var index = _index;
-
-            // Continuously read in items from the enumerator, updating _count
-            // and _index when we run out of space.
-
-            var end = skipCount + takeCount;
-            for (var itemIndex = skipCount; itemIndex < end; itemIndex++)
-            {
-                var item = items[itemIndex];
-                if (predicate(item))
-                {
-                    if ((uint)index >= (uint)destination.Length)
-                        AddWithBufferAllocation(selector(item), ref destination, ref index);
-                    else
-                        destination[index] = selector(item)!;
-
-                    index++;
-                }
-            }
-            
-            // Final update to _count and _index.
-            _count += index - _index;
-            _index = index;
         }
     }
 }

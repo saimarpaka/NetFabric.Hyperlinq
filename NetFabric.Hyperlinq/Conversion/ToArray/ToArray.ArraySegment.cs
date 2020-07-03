@@ -1,6 +1,5 @@
-﻿using NetFabric.Hyperlinq;
-using System;
-using System.Collections.Generic;
+﻿using System;
+using System.Buffers;
 using System.Runtime.CompilerServices;
 
 namespace NetFabric.Hyperlinq
@@ -12,186 +11,76 @@ namespace NetFabric.Hyperlinq
         public static TSource[] ToArray<TSource>(this in ArraySegment<TSource> source)
         {
             var result = new TSource[source.Count];
-            Array.Copy(source.Array, source.Offset, result, 0, source.Count);
+            ArrayExtensions.Copy(source.Array, source.Offset, result, 0, source.Count);
             return result;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ArraySegment<TSource> ToArray<TSource>(this in ArraySegment<TSource> source, ArrayPool<TSource> pool)
+        {
+            var result = new ArraySegment<TSource>(pool.Rent(source.Count), 0, source.Count);
+            ArrayExtensions.Copy(source.Array, result.Array, source.Count);
+            return result;
+        }
+
+
+#if SPAN_SUPPORTED
+
+        public static IMemoryOwner<TSource> ToArray<TSource>(this in ArraySegment<TSource> source, MemoryPool<TSource> pool)
+        {
+            var result = pool.RentSliced(source.Count);
+            ArrayExtensions.Copy(source.AsSpan(), result.Memory.Span);
+            return result;
+        }
+
+#endif
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static TSource[] ToArray<TSource>(this in ArraySegment<TSource> source, Predicate<TSource> predicate)
         {
-            var builder = new LargeArrayBuilder<TSource>(initialize: true);
-            builder.AddRange(source, predicate);
-            return builder.ToArray();
-        }
-
-
-        static TSource[] ToArray<TSource>(this in ArraySegment<TSource> source, PredicateAt<TSource> predicate)
-        {
-            var builder = new LargeArrayBuilder<TSource>(initialize: true);
-            builder.AddRange(source, predicate);
-            return builder.ToArray();
-        }
-
-
-        static TResult[] ToArray<TSource, TResult>(this in ArraySegment<TSource> source, NullableSelector<TSource, TResult> selector)
-        {
+            using var builder = new LargeArrayBuilder<TSource>(initialize: true);
             var array = source.Array;
-            var result = new TResult[source.Count];
-            if (source.Offset == 0)
-            {
-                if (source.Count == array.Length)
-                {
-                    for (var index = 0; index < result.Length; index++)
-                        result[index] = selector(array[index]);
-                }
-                else
-                {
-                    var end = source.Count;
-                    for (var index = 0; index < end; index++)
-                        result[index] = selector(array[index]);
-                }
-            } 
-            else
-            {
-                var offset = source.Offset;
-                var end = source.Count;
-                for (var index = 0; index < end; index++)
-                    result[index] = selector(array[index + offset]);
-            }
-            return result;
-        }
-
-
-        static TResult[] ToArray<TSource, TResult>(this in ArraySegment<TSource> source, NullableSelectorAt<TSource, TResult> selector)
-        {
-            var array = source.Array;
-            var result = new TResult[source.Count];
-            if (source.Offset == 0)
-            {
-                if (source.Count == array.Length)
-                {
-                    for (var index = 0; index < array.Length; index++)
-                        result[index] = selector(array[index], index);
-                }
-                else
-                {
-                    var end = source.Count;
-                    for (var index = 0; index < end; index++)
-                        result[index] = selector(array[index], index);
-                }
-            } 
-            else
-            {
-                var offset = source.Offset;
-                var end = source.Count;
-                for (var index = 0; index < end; index++)
-                    result[index] = selector(array[index + offset], index);
-            }
-            return result;
-        }
-
-
-        static TResult[] ToArray<TSource, TResult>(this in ArraySegment<TSource> source, Predicate<TSource> predicate, NullableSelector<TSource, TResult> selector)
-        {
-            var builder = new LargeArrayBuilder<TResult>(initialize: true);
-            builder.AddRange<TSource>(source, predicate, selector);
-            return builder.ToArray();
-        }
-    }
-}
-
-namespace System.Collections.Generic
-{
-    partial struct LargeArrayBuilder<T>
-    {
-        public void AddRange(in ArraySegment<T> source, Predicate<T> predicate)
-        {
-            var array = source.Array;
-            var destination = _current;
-            var index = _index;
-
-            // Continuously read in items from the enumerator, updating _count
-            // and _index when we run out of space.
-
             if (source.Offset == 0 && source.Count == array.Length)
             {
-                for (var sourceIndex = 0; sourceIndex < array.Length; sourceIndex++)
+                for (var index = 0; index < array.Length; index++)
                 {
-                    var item = array[sourceIndex];
-                    if (predicate(item))
-                    {
-                        if ((uint)index >= (uint)destination.Length)
-                            AddWithBufferAllocation(item, ref destination, ref index);
-                        else
-                            destination[index] = item;
-
-                        index++;
-                    }
+                    if (predicate(array[index]))
+                        builder.Add(array[index]);
                 }
             }
             else
             {
                 var end = source.Offset + source.Count;
-                for (var sourceIndex = source.Offset; sourceIndex < end; sourceIndex++)
+                for (var index = source.Offset; index < end; index++)
                 {
-                    var item = array[sourceIndex];
-                    if (predicate(item))
-                    {
-                        if ((uint)index >= (uint)destination.Length)
-                            AddWithBufferAllocation(item, ref destination, ref index);
-                        else
-                            destination[index] = item;
-
-                        index++;
-                    }
+                    if (predicate(array[index]))
+                        builder.Add(array[index]);
                 }
             }
-            
-            // Final update to _count and _index.
-            _count += index - _index;
-            _index = index;
+            return builder.ToArray();
         }
 
-        public void AddRange(in ArraySegment<T> source, PredicateAt<T> predicate)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static TSource[] ToArray<TSource>(this in ArraySegment<TSource> source, PredicateAt<TSource> predicate)
         {
+            using var builder = new LargeArrayBuilder<TSource>(initialize: true);
             var array = source.Array;
-            var destination = _current;
-            var index = _index;
-
-            // Continuously read in items from the enumerator, updating _count
-            // and _index when we run out of space.
-
             if (source.Offset == 0)
             {
                 if (source.Count == array.Length)
                 {
-                    for (var sourceIndex = 0; sourceIndex < array.Length; sourceIndex++)
+                    for (var index = 0; index < array.Length; index++)
                     {
-                        var item = array[sourceIndex];
-                        if (predicate(item, sourceIndex))
-                        {
-                            if ((uint)index >= (uint)destination.Length)
-                                AddWithBufferAllocation(item, ref destination, ref index);
-                            else
-                                destination[index] = item;
-
-                            index++;
-                        }
+                        if (predicate(array[index], index))
+                            builder.Add(array[index]);
                     }
                 }
                 else
                 {
-                    for (var sourceIndex = 0; sourceIndex < source.Count; sourceIndex++)
+                    for (var index = 0; index < source.Count; index++)
                     {
-                        var item = array[sourceIndex];
-                        if (predicate(item, sourceIndex))
-                        {
-                            if ((uint)index >= (uint)destination.Length)
-                                AddWithBufferAllocation(item, ref destination, ref index);
-                            else
-                                destination[index] = item;
-
-                            index++;
-                        }
+                        if (predicate(array[index], index))
+                            builder.Add(array[index]);
                     }
                 }
             }
@@ -199,73 +88,54 @@ namespace System.Collections.Generic
             {
                 var offset = source.Offset;
                 var count = source.Count;
-                for (var sourceIndex = 0; sourceIndex < count; sourceIndex++)
+                for (var index = 0; index < count; index++)
                 {
-                    var item = array[sourceIndex + offset];
-                    if (predicate(item, sourceIndex))
-                    {
-                        if ((uint)index >= (uint)destination.Length)
-                            AddWithBufferAllocation(item, ref destination, ref index);
-                        else
-                            destination[index] = item;
-
-                        index++;
-                    }
+                    if (predicate(array[index + offset], index))
+                        builder.Add(array[index + offset]);
                 }
             }
-
-            
-            // Final update to _count and _index.
-            _count += index - _index;
-            _index = index;
+            return builder.ToArray();
         }
 
-        public void AddRange<U>(in ArraySegment<U> source, Predicate<U> predicate, NullableSelector<U, T> selector)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static TResult[] ToArray<TSource, TResult>(this in ArraySegment<TSource> source, NullableSelector<TSource, TResult> selector)
         {
+            var result = new TResult[source.Count];
+            ArrayExtensions.Copy(source.Array, source.Offset, result, source.Count, selector);
+            return result;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static TResult[] ToArray<TSource, TResult>(this in ArraySegment<TSource> source, NullableSelectorAt<TSource, TResult> selector)
+        {
+            var result = new TResult[source.Count];
+            ArrayExtensions.Copy(source.Array, source.Offset, result, source.Count, selector);
+            return result;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static TResult[] ToArray<TSource, TResult>(this in ArraySegment<TSource> source, Predicate<TSource> predicate, NullableSelector<TSource, TResult> selector)
+        {
+            using var builder = new LargeArrayBuilder<TResult>(initialize: true);
             var array = source.Array;
-            var destination = _current;
-            var index = _index;
-
-            // Continuously read in items from the enumerator, updating _count
-            // and _index when we run out of space.
-
             if (source.Offset == 0 && source.Count == array.Length)
             {
                 for (var sourceIndex = 0; sourceIndex < array.Length; sourceIndex++)
                 {
-                    var item = array[sourceIndex];
-                    if (predicate(item))
-                    {
-                        if ((uint)index >= (uint)destination.Length)
-                            AddWithBufferAllocation(selector(item), ref destination, ref index);
-                        else
-                            destination[index] = selector(item);
-
-                        index++;
-                    }
+                    if (predicate(array[sourceIndex]))
+                        builder.Add(selector(array[sourceIndex]));
                 }
             }
             else
             {
                 var end = source.Offset + source.Count;
-                for (var sourceIndex = source.Offset; sourceIndex < end; sourceIndex++)
+                for (var index = source.Offset; index < end; index++)
                 {
-                    var item = array[sourceIndex];
-                    if (predicate(item))
-                    {
-                        if ((uint)index >= (uint)destination.Length)
-                            AddWithBufferAllocation(selector(item), ref destination, ref index);
-                        else
-                            destination[index] = selector(item);
-
-                        index++;
-                    }
+                    if (predicate(array[index]))
+                        builder.Add(selector(array[index]));
                 }
             }
-            
-            // Final update to _count and _index.
-            _count += index - _index;
-            _index = index;
+            return builder.ToArray();
         }
     }
 }

@@ -5,8 +5,8 @@ namespace NetFabric.Hyperlinq.UnitTests
 {
     static class SpanExtensions
     {
-        public static bool SequenceEqual<T>(this Span<T> first, IEnumerable<T> second)
-            => SequenceEqual((ReadOnlySpan<T>)first, second);
+        public static bool SequenceEqual<T>(this Span<T> first, IEnumerable<T> second, IEqualityComparer<T> comparer = null)
+            => SequenceEqual((ReadOnlySpan<T>)first, second, comparer);
 
         public static bool SequenceEqual<T>(this ReadOnlySpan<T> first, IEnumerable<T> second, IEqualityComparer<T> comparer = null)
         {

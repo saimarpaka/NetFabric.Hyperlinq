@@ -63,34 +63,41 @@ namespace NetFabric.Hyperlinq
             bool ICollection<TResult>.IsReadOnly
                 => true;
 
-            public void CopyTo(TResult[] array, int arrayIndex)
+            public void CopyTo(TResult[] array)
             {
                 var sourceArray = source.Array;
                 var offset = source.Offset;
                 if (offset == 0)
                 {
-                    if (arrayIndex == 0)
-                    {
-                        for (var index = 0; index < Count; index++)
-                            array[index] = selector(sourceArray[index], index);
-                    }
-                    else
-                    {
-                        for (var index = 0; index < Count; index++)
-                            array[index + arrayIndex] = selector(sourceArray[index], index);
-                    }
+                    for (var index = 0; index < Count; index++)
+                        array[index] = selector(sourceArray[index], index)!;
                 }
                 else
                 {
-                    if (arrayIndex == 0)
+                    for (var index = 0; index < Count; index++)
+                        array[index] = selector(sourceArray[index + offset], index)!;
+                }
+            }
+
+            public void CopyTo(TResult[] array, int arrayIndex)
+            {
+                if (arrayIndex == 0)
+                {
+                    CopyTo(array);
+                }
+                else
+                {
+                    var sourceArray = source.Array;
+                    var offset = source.Offset;
+                    if (offset == 0)
                     {
                         for (var index = 0; index < Count; index++)
-                            array[index] = selector(sourceArray[index + offset], index);
+                            array[index + arrayIndex] = selector(sourceArray[index], index)!;
                     }
                     else
                     {
                         for (var index = 0; index < Count; index++)
-                            array[index + arrayIndex] = selector(sourceArray[index + offset], index);
+                            array[index + arrayIndex] = selector(sourceArray[index + offset], index)!;
                     }
                 }
             }

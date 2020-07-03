@@ -51,6 +51,7 @@ namespace NetFabric.Hyperlinq.Benchmarks
                 typeof(LinkedListBenchmarks),
                 typeof(RangeWhereSelectToArrayBenchmarks),
                 typeof(RangeSelectDistinctToListBenchmarks),
+                typeof(RangeSelectDistinctToArrayBenchmarks),
                 typeof(ArraySkipTakeWhereSelectBenchmarks),
                 typeof(ListWhereBenchmarks),
                 typeof(ListSelectBenchmarks),

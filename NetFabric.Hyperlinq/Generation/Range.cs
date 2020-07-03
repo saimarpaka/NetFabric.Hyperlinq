@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -74,19 +75,58 @@ namespace NetFabric.Hyperlinq
             bool ICollection<int>.IsReadOnly  
                 => true;
 
-            public void CopyTo(int[] array, int arrayIndex) 
+#if SPAN_SUPPORTED
+
+            public void CopyTo(Span<int> array)
             {
-                if (arrayIndex == 0)
+                if (start == 0)
                 {
                     for (var index = 0; index < Count; index++)
-                        array[index] = index + start;
+                        array[index] = index;
                 }
                 else
                 {
                     for (var index = 0; index < Count; index++)
-                        array[index + arrayIndex] = index + start;
-                } 
+                        array[index] = index + start;
+                }
             }
+
+#endif
+            public void CopyTo(int[] array)
+            {
+                if (start == 0)
+                {
+                    for (var index = 0; index < Count; index++)
+                        array[index] = index;
+                }
+                else
+                {
+                    for (var index = 0; index < Count; index++)
+                        array[index] = index + start;
+                }
+            }
+
+            public void CopyTo(int[] array, int arrayIndex)
+            {
+                if (arrayIndex == 0)
+                {
+                    CopyTo(array);
+                }
+                else
+                {
+                    if (start == 0)
+                    {
+                        for (var index = 0; index < Count; index++)
+                            array[index + arrayIndex] = index;
+                    }
+                    else
+                    {
+                        for (var index = 0; index < Count; index++)
+                            array[index + arrayIndex] = index + start;
+                    }
+                }
+            }
+
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool Contains(int value)
@@ -191,18 +231,27 @@ namespace NetFabric.Hyperlinq
             public int[] ToArray()
             {
                 var array = new int[Count];
-                if (start == 0)
-                {
-                    for (var index = 0; index < array.Length; index++)
-                        array[index] = index;
-                }
-                else
-                {
-                    for (var index = 0; index < array.Length; index++)
-                        array[index] = index + start;
-                } 
+                CopyTo(array);
                 return array;
             }
+
+            public ArraySegment<int> ToArray(ArrayPool<int> pool)
+            {
+                var result = new ArraySegment<int>(pool.Rent(Count), 0, Count);
+                CopyTo(result.Array);
+                return result;
+            }
+
+#if SPAN_SUPPORTED
+
+            public IMemoryOwner<int> ToArray(MemoryPool<int> pool)
+            {
+                var result = pool.RentSliced(Count);
+                CopyTo(result.Memory.Span);
+                return result;
+            }
+
+#endif
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public List<int> ToList()

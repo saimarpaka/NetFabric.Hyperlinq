@@ -76,27 +76,32 @@ namespace NetFabric.Hyperlinq
             bool ICollection<TResult>.IsReadOnly  
                 => true;
 
-            public void CopyTo(TResult[] array, int arrayIndex) 
+            public void CopyTo(TResult[] array) 
             {
                 if (skipCount == 0)
                 {
-                    if (arrayIndex == 0)
-                    {
-                        for (var index = 0; index < Count; index++)
-                            array[index] = selector(source[index], index)!;
-                    }
-                    else
-                    {
-                        for (var index = 0; index < Count; index++)
-                            array[index + arrayIndex] = selector(source[index], index)!;
-                    }
+                    for (var index = 0; index < Count; index++)
+                        array[index] = selector(source[index], index)!;
                 }
                 else
                 {
-                    if (arrayIndex == 0)
+                    for (var index = 0; index < Count; index++)
+                        array[index] = selector(source[index + skipCount], index)!;
+                }
+            }
+
+            public void CopyTo(TResult[] array, int arrayIndex)
+            {
+                if (arrayIndex == 0)
+                {
+                    CopyTo(array);
+                }
+                else
+                {
+                    if (skipCount == 0)
                     {
                         for (var index = 0; index < Count; index++)
-                            array[index] = selector(source[index + skipCount], index)!;
+                            array[index + arrayIndex] = selector(source[index], index)!;
                     }
                     else
                     {

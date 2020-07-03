@@ -27,6 +27,9 @@ This implementation **favors performance in detriment of assembly binary size** 
   - [Method return types](#method-return-types)
   - [Composition](#composition)
   - [Option](#option)
+  - [Buffer pools](#buffer-pools)
+    - [`MemoryPool<>`](#memorypool)
+    - [`ArrayPool<>`](#arraypool)
 - [Documentation](#documentation)
 - [Supported operations](#supported-operations)
 - [Benchmarks](#benchmarks)
@@ -44,7 +47,7 @@ This implementation **favors performance in detriment of assembly binary size** 
 - Whenever possible, the enumerator returned by the public `GetEnumerator()` or `GetAsyncEnumerator()` does not implement `IDisposable`. This allows the `foreach` that enumerates the result to be inlinable. 
 - Operations enumerate the source using the indexer when the source is an array, `ArraySegment<>`, `Span<>`, `ReadOnlySpan<>`, `Memory<>`, `ReadOnlyMemory<>`, or implements `IReadOnlyList<>`. The indexer performs a lot fewer operations than the enumerator.
 - The enumerables returned by operations like `Range()`, `Repeat()`, `Return()`, and `Select()`, implement `IReadOnlyList<>` and `IList<>`.
-- Use of object pools in operations like `Distinct()`.
+- Use of buffer pools in operations like `Distinct()`.
 - Elimination of conditional branchs in `Count()` with a predicate.
 - Allows the JIT compiler to perform optimizations on array enumeration whenever possible.
 - Takes advantage of `EqualityComparer<>.Default` devirtualization whenever possible.
@@ -60,9 +63,9 @@ When the indexers are used, no allocation is performed.
 
 It only allocates on the heap for the following cases:
 
-- `ToArray()` and `ToList()` allocate their results on the heap.
 - Operations that use `ICollection<>.CopyTo()`, `ICollection<>.Contains()`, or `IList<>.IndexOf()` will box enumerables that are value-types.   
 - `ToList()`, when applied to collections that implement `IReadOnlyCollection<>` but not `ICollection<>`, allocates an instance of an helper class so that `ICollection<>.CopyTo()` can be used.
+- `ToArray()` and `ToList()` allocate their results on the heap. You can use the `ToArray()` overload that take an buffer pool as parameter so that its result is not managed by the garbage collector.
 
 ## Usage
 
@@ -73,7 +76,6 @@ It only allocates on the heap for the following cases:
 ``` csharp
 using System;
 using System.Linq;
-using System.Linq.Async;
 using NetFabric.Hyperlinq; // add this directive
 ```
 
@@ -298,6 +300,52 @@ source.First().Where(item => item > 2).Match(
   () => { });
 ```
 
+### Buffer pools
+
+There are operations that do have to allocate on the heap. There are the ones that need to use a collection internally (like `Distinct()`) and the ones that return a collection (like `ToList()` and `ToArray()`).
+
+[Buffer pools](https://adamsitnik.com/Array-Pool/) allow the use of heap memory without adding pressure to the garbage collector. It preallocates a chunk of memory and "rents" it as required. The garbage collector will add this memory to the Large Object Heap (LOH).
+
+`Netfabric.Hyperlinq` uses the buffer pool for internal collections.
+
+`ToArray()` is usually used to cache values for a brief period. `Netfabric.Hyperlinq` adds an oveload that takes an buffer pool as parameter. It can be either a `MemoryPool<>` or a `ArrayPool<>`.
+#### `MemoryPool<>`
+
+On target platforms that support `Span<>`, it advisable to use the `MemoryPool<>`:
+
+``` csharp
+using(var buffer = source.ToArray(MemoryPool<int>.Shared))
+{
+    var memory = buffer.Memory;
+    // use memory here
+}
+```
+
+It returns an [`IMemoryOwner<>`](https://docs.microsoft.com/en-us/dotnet/api/system.buffers.imemoryowner-1). The `using` statement guarantees that it is disposed and the buffer returned to the pool. 
+
+Buffer pools may return buffers larger than requested. `ToArray()` always returns buffers with the exact same size as the result. The `Length` property can be used to check for the end of an iteration.
+
+#### `ArrayPool<>`
+
+`ArrayPool<>` is available on all target platforms:
+
+``` csharp
+var pool = ArrayPool<int>.Shared;
+var buffer = source.ToArray(pool);
+try
+{
+    // use array segment here
+}
+finally
+{
+    pool.Return(buffer.Array);
+}
+```
+
+It returns an [`ArraySegment<>`](https://docs.microsoft.com/en-us/dotnet/api/system.arraysegment-1). The buffer has to be explicitly returned to the pool. It should be done inside a `finally` so that is returned even when an exception is thrown.
+
+The internal array can be larger than the result. The property `ArraySegment<>.Count` should be used to check for the end of the iteration, instead of the array `Length` property.
+
 ## Documentation
 
 Articles explaining implementation:
@@ -366,6 +414,7 @@ The repository contains a [benchmarks project](https://github.com/NetFabric/NetF
 - [Improving .NET Disruptor performance — Part 2](https://medium.com/@ocoanet/improving-net-disruptor-performance-part-2-5bf456cd595f) by Olivier Coanet
 - [Optimizing string.Count all the way from LINQ to hardware accelerated vectorized instructions](https://medium.com/@SergioPedri/optimizing-string-count-all-the-way-from-linq-to-hardware-accelerated-vectorized-instructions-186816010ad9) by Sergio Pedri 
 - [Simulating Return Type Inference in C#](https://tyrrrz.me/blog/return-type-inference) by Alexey Golub
+- [Pooling large arrays with ArrayPool](https://adamsitnik.com/Array-Pool/) by Adam Sitnik
 
 ## Credits
 

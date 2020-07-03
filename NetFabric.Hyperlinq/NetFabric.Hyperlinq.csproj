@@ -26,10 +26,12 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(TargetFramework)'=='net461' Or '$(TargetFramework)'=='netstandard2.0'">
+    <Compile Remove="Utils\MemoryPoolExtensions.cs" />
     <Compile Remove="**\*.ReadOnlySpan.cs" />
     <Compile Remove="**\*.Span.cs" />
     <Compile Remove="**\*.ReadOnlyMemory.cs" />
     <Compile Remove="**\*.Memory.cs" />
+    <Compile Remove="**\*.MemoryPool.cs" />
     <PackageReference Include="System.ValueTuple" Version="4.5.0" />
   </ItemGroup>
 
@@ -79,4 +81,8 @@
   </ItemGroup>
   
   <Import Project="..\NetFabric.Hyperlinq.Generator\build\NetFabric.Hyperlinq.Generator.props" />
+  
+  <ItemGroup>
+    <UpToDateCheck Remove="Conversion\ToArray\ArrayBuilder.cs" />
+  </ItemGroup>
 </Project>
